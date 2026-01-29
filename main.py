@@ -6,6 +6,8 @@ from datetime import datetime
 # GitHub Secrets 환경변수 불러오기
 SERVICE_KEY = os.environ.get('AIRPORT_KEY')
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_URL')
+
+# [중요] 장부 파일명을 v2로 변경하여 기존 기억을 초기화함 (지연/결항 건 다시 알림)
 DATA_FILE = 'sent_data_v2.json'
 
 def send_slack(msg):
@@ -66,13 +68,17 @@ def check_jeju():
         
         for flight in items:
             status = flight.get('rmkKor', '')     # 상태 (도착, 지연, 결항 등)
-            std = flight.get('std', '0000')       # 예정시간
-            etd = flight.get('etd')               # 변경시간
             
-            if not etd: 
+            # [에러 수정 파트] 데이터를 가져올 때 무조건 str()로 감싸서 '글자'로 만듦
+            std = str(flight.get('std', '0000'))       # 예정시간
+            etd = flight.get('etd')                    # 변경시간
+            
+            if etd:
+                etd = str(etd)
+            else: 
                 etd = std
 
-            # 시간 비교를 위해 숫자로 변환 (예: "1230" -> 1230)
+            # 시간 비교를 위해 숫자로 변환 (크기 비교용)
             try:
                 std_int = int(std)
                 etd_int = int(etd)
@@ -81,9 +87,8 @@ def check_jeju():
                 etd_int = 0
 
             # [핵심 로직]
-            # 1. "결항"이거나 "지연" 글자가 있는 경우 무조건 포함
-            # 2. 시간이 "뒤로 밀린 경우(지연)" 포함 (etd > std)
-            # 3. 조기 도착(etd < std)은 여기서 자동 제외됨
+            # 1. "결항"이거나 "지연" 글자가 있는 경우
+            # 2. 시간이 "뒤로 밀린 경우(지연)" (etd > std)
             is_cancelled = "결항" in str(status)
             is_delayed_status = "지연" in str(status)
             is_time_delayed = etd_int > std_int
@@ -98,7 +103,7 @@ def check_jeju():
                     airline = flight.get('airlineKorean', '')
                     origin = flight.get('boardingKor', '')
                     
-                    # 시간 포맷팅 (1210 -> 12:10)
+                    # [안전해진 코드] std와 etd가 무조건 글자이므로 쪼개기 가능
                     sched_time = f"{std[:2]}:{std[2:]}"
                     etd_time = f"{etd[:2]}:{etd[2:]}"
                     
@@ -110,7 +115,7 @@ def check_jeju():
                         title = "항공편 지연 알림"
                         emoji = "⚠️"
 
-                    # 메시지 포맷 작성 (요청하신 형태)
+                    # 메시지 포맷 작성
                     msg = (f"{emoji} *{title}*\n"
                            f"{airline} {flight_num}\n"
                            f"{origin} → 제주\n"
