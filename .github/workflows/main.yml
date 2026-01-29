@@ -2,8 +2,9 @@ name: Jeju Airport Watcher
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 10분마다 실행
-  workflow_dispatch:      # 수동 실행 버튼
+    # 정각, 10분, 20분... 단위로 실행 (UTC 기준이므로 한국 시간과는 차이가 있지만 주기는 동일합니다)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # 수동 실행 버튼 허용
 
 permissions:
   contents: write
