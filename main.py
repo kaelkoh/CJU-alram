@@ -7,8 +7,8 @@ from datetime import datetime
 SERVICE_KEY = os.environ.get('AIRPORT_KEY')
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_URL')
 
-# [중요] 장부 파일명을 v2로 변경하여 기존 기억을 초기화함 (지연/결항 건 다시 알림)
-DATA_FILE = 'sent_data_v2.json'
+# 장부 파일명을 유지하여 v3 디자인의 알림을 중복 없이 관리함
+DATA_FILE = 'sent_data_v4.json'
 
 def send_slack(msg):
     try:
@@ -34,18 +34,16 @@ def check_jeju():
     sent_ids = load_sent_data()
     today_str = datetime.now().strftime("%Y%m%d")
     
-    # 오늘 날짜가 아닌 데이터는 메모리에서 정리
     sent_ids = {x for x in sent_ids if x.startswith(today_str)}
 
-    # 제주공항 국내선 도착편 조회
     url = "http://openapi.airport.co.kr/service/rest/FlightStatusList/getFlightStatusList"
     params = {
         'serviceKey': SERVICE_KEY,
-        'schLineType': 'D',      # 국내선
-        'schIOType': 'I',        # 도착
-        'schAirCode': 'CJU',     # 제주공항
-        'schStTime': '0600',     # 06시부터
-        'schEdTime': '2359',     # 24시까지
+        'schLineType': 'D',
+        'schIOType': 'I',
+        'schAirCode': 'CJU',
+        'schStTime': '0600',
+        'schEdTime': '2359',
         'numOfRows': '500',
         '_type': 'json'
     }
@@ -67,18 +65,18 @@ def check_jeju():
         new_count = 0
         
         for flight in items:
-            status = flight.get('rmkKor', '')     # 상태 (도착, 지연, 결항 등)
+            # [수정] rmkKor 값이 없거나 공백이면 '예정'으로 표시
+            raw_status = flight.get('rmkKor')
+            status = str(raw_status).strip() if raw_status else "예정"
             
-            # [에러 수정 파트] 데이터를 가져올 때 무조건 str()로 감싸서 '글자'로 만듦
-            std = str(flight.get('std', '0000'))       # 예정시간
-            etd = flight.get('etd')                    # 변경시간
+            std = str(flight.get('std', '0000'))
+            etd = flight.get('etd')
             
             if etd:
                 etd = str(etd)
             else: 
                 etd = std
 
-            # 시간 비교를 위해 숫자로 변환 (크기 비교용)
             try:
                 std_int = int(std)
                 etd_int = int(etd)
@@ -86,37 +84,27 @@ def check_jeju():
                 std_int = 0
                 etd_int = 0
 
-            # [핵심 로직]
-            # 1. "결항"이거나 "지연" 글자가 있는 경우
-            # 2. 시간이 "뒤로 밀린 경우(지연)" (etd > std)
-            is_cancelled = "결항" in str(status)
-            is_delayed_status = "지연" in str(status)
+            is_cancelled = "결항" in status
+            is_delayed_status = "지연" in status
             is_time_delayed = etd_int > std_int
 
             if is_cancelled or is_delayed_status or is_time_delayed:
                 flight_num = flight.get('airFln', 'Unknown')
-                
-                # 고유 ID: 날짜_편명_상태_변경시간
                 unique_id = f"{today_str}_{flight_num}_{status}_{etd}"
                 
                 if unique_id not in sent_ids:
                     airline = flight.get('airlineKorean', '')
                     origin = flight.get('boardingKor', '')
                     
-                    # [안전해진 코드] std와 etd가 무조건 글자이므로 쪼개기 가능
                     sched_time = f"{std[:2]}:{std[2:]}"
                     etd_time = f"{etd[:2]}:{etd[2:]}"
                     
-                    # 제목 및 이모지 설정
                     if is_cancelled:
-                        title = "항공편 결항 알림"
-                        emoji = "🚫"
+                        header = "🚫 *항공편 결항 알림*"
                     else:
-                        title = "항공편 지연 알림"
-                        emoji = "⚠️"
+                        header = "⚠️ *항공편 지연 알림*"
 
-                    # 메시지 포맷 작성
-                    msg = (f"{emoji} *{title}*\n"
+                    msg = (f"{header}\n"
                            f"{airline} {flight_num}\n"
                            f"{origin} → 제주\n"
                            f"{sched_time} → {etd_time}\n"
