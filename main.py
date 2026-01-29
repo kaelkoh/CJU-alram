@@ -35,7 +35,7 @@ def check_jeju():
     # 오늘 날짜가 아닌 데이터는 메모리에서 정리
     sent_ids = {x for x in sent_ids if x.startswith(today_str)}
 
-    # 제주공항 국내선 도착편 조회 (06:00 ~ 23:59)
+    # 제주공항 국내선 도착편 조회
     url = "http://openapi.airport.co.kr/service/rest/FlightStatusList/getFlightStatusList"
     params = {
         'serviceKey': SERVICE_KEY,
@@ -56,7 +56,7 @@ def check_jeju():
             data = res.json()
             items = data['response']['body']['items']['item']
         except (KeyError, TypeError, json.JSONDecodeError):
-            print("데이터가 없거나 응답 형식 오류 (아직 운항 정보가 없을 수 있음)")
+            print("데이터가 없거나 응답 형식 오류")
             pass
 
         if isinstance(items, dict):
@@ -65,21 +65,25 @@ def check_jeju():
         new_count = 0
         
         for flight in items:
-            status = flight.get('remark', '')     # 지연, 결항 등 상태 텍스트
-            std = flight.get('std', '0000')       # 원래 스케줄 (예: 1210)
-            est = flight.get('est', std)          # 변경된 시간 (예: 1213)
+            status = flight.get('rmkKor', '')     # 문서 기준: rmkKor (항공편상태 국문)
+            std = flight.get('std', '0000')       # 문서 기준: std (예정시간)
             
-            # [수정된 핵심 로직] 
+            # [수정됨] 문서 기준: etd (변경시간)
+            # etd가 없으면(None이면) std(예정시간)를 대신 씀
+            etd = flight.get('etd')
+            if not etd: 
+                etd = std
+
             # 1. 상태에 '지연/결항' 글자가 있거나 
-            # 2. 원래시간(std)과 변경시간(est)이 다르면 무조건 알림 대상!
+            # 2. 예정시간(std)과 변경시간(etd)이 다르면 알림 대상
             is_status_issue = status and ('지연' in status or '결항' in status)
-            is_time_changed = (std != est)
+            is_time_changed = (std != etd)
 
             if is_status_issue or is_time_changed:
                 flight_num = flight.get('airFln', 'Unknown')
                 
-                # 고유 ID에 '변경시간(est)'을 포함해 시간이 바뀌면 또 알림이 오도록 함
-                unique_id = f"{today_str}_{flight_num}_{status}_{est}"
+                # 고유 ID에 변경시간(etd) 포함
+                unique_id = f"{today_str}_{flight_num}_{status}_{etd}"
                 
                 if unique_id not in sent_ids:
                     airline = flight.get('airlineKorean', '')
@@ -87,23 +91,21 @@ def check_jeju():
                     
                     # 시간 포맷팅 (1210 -> 12:10)
                     sched_time = f"{std[:2]}:{std[2:]}"
-                    est_time = f"{est[:2]}:{est[2:]}"
+                    etd_time = f"{etd[:2]}:{etd[2:]}"
                     
-                    # 이모지 결정 (결항이면 빨간금지, 지연이나 시간변경은 노란경고)
-                    if "결항" in status:
+                    if "결항" in str(status):
                         emoji = "🚫"
                         title = "결항"
-                    elif "지연" in status:
+                    elif "지연" in str(status):
                         emoji = "⚠️"
                         title = "지연"
                     else:
-                        emoji = "🕒" # 단순 시간 변경 아이콘
+                        emoji = "🕒"
                         title = "시간변경"
 
-                    # 메시지 내용 구성
                     msg = (f"{emoji} *제주공항 {title} 알림*\n"
                            f"✈️ {airline} {flight_num}\n"
-                           f"🛫 {origin} → ⏰ {sched_time} (변경: {est_time})")
+                           f"🛫 {origin} → ⏰ {sched_time} (변경: {etd_time})")
                     
                     if status:
                          msg += f"\n📢 상태: {status}"
