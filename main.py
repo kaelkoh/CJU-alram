@@ -6,7 +6,7 @@ from datetime import datetime
 # GitHub Secrets 환경변수 불러오기
 SERVICE_KEY = os.environ.get('AIRPORT_KEY')
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_URL')
-DATA_FILE = 'sent_data.json'
+DATA_FILE = 'sent_data_v2.json'
 
 def send_slack(msg):
     try:
