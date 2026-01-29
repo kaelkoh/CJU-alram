@@ -65,35 +65,49 @@ def check_jeju():
         new_count = 0
         
         for flight in items:
-            status = flight.get('remark', '')
+            status = flight.get('remark', '')     # 지연, 결항 등 상태 텍스트
+            std = flight.get('std', '0000')       # 원래 스케줄 (예: 1210)
+            est = flight.get('est', std)          # 변경된 시간 (예: 1213)
             
-            # '지연' 또는 '결항' 상태일 때만 알림
-            if status and ('지연' in status or '결항' in status):
+            # [수정된 핵심 로직] 
+            # 1. 상태에 '지연/결항' 글자가 있거나 
+            # 2. 원래시간(std)과 변경시간(est)이 다르면 무조건 알림 대상!
+            is_status_issue = status and ('지연' in status or '결항' in status)
+            is_time_changed = (std != est)
+
+            if is_status_issue or is_time_changed:
                 flight_num = flight.get('airFln', 'Unknown')
                 
-                # [중요] 스케줄 시간(std)과 변경 예정 시간(est)을 모두 가져옴
-                std = flight.get('std', '0000')      # 당초 예정 시간
-                est = flight.get('est', std)         # 변경된 시간 (없으면 당초 시간 사용)
-                
-                # 고유 ID 생성 규칙 변경: 날짜_편명_상태_변경시간
-                # 이제 시간이 1분이라도 바뀌면 새로운 알림으로 인식합니다.
+                # 고유 ID에 '변경시간(est)'을 포함해 시간이 바뀌면 또 알림이 오도록 함
                 unique_id = f"{today_str}_{flight_num}_{status}_{est}"
                 
                 if unique_id not in sent_ids:
                     airline = flight.get('airlineKorean', '')
                     origin = flight.get('boardingKor', '')
                     
-                    # 시간 포맷팅 (1430 -> 14:30)
+                    # 시간 포맷팅 (1210 -> 12:10)
                     sched_time = f"{std[:2]}:{std[2:]}"
                     est_time = f"{est[:2]}:{est[2:]}"
                     
-                    emoji = "🚫" if "결항" in status else "⚠️"
-                    
-                    # 메시지에 변경된 시간을 강조해서 보여줌
-                    msg = (f"{emoji} *제주공항 {status} 알림*\n"
+                    # 이모지 결정 (결항이면 빨간금지, 지연이나 시간변경은 노란경고)
+                    if "결항" in status:
+                        emoji = "🚫"
+                        title = "결항"
+                    elif "지연" in status:
+                        emoji = "⚠️"
+                        title = "지연"
+                    else:
+                        emoji = "🕒" # 단순 시간 변경 아이콘
+                        title = "시간변경"
+
+                    # 메시지 내용 구성
+                    msg = (f"{emoji} *제주공항 {title} 알림*\n"
                            f"✈️ {airline} {flight_num}\n"
                            f"🛫 {origin} → ⏰ {sched_time} (변경: {est_time})")
                     
+                    if status:
+                         msg += f"\n📢 상태: {status}"
+
                     send_slack(msg)
                     sent_ids.add(unique_id)
                     new_count += 1
