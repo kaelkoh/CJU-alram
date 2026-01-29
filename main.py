@@ -7,7 +7,7 @@ from datetime import datetime
 SERVICE_KEY = os.environ.get('AIRPORT_KEY')
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_URL')
 
-# 장부 파일명을 유지하여 v3 디자인의 알림을 중복 없이 관리함
+# [중요] 디자인이 변경되었으므로 새 장부(v4)를 사용하여 즉시 확인 가능하게 함
 DATA_FILE = 'sent_data_v4.json'
 
 def send_slack(msg):
@@ -33,7 +33,6 @@ def check_jeju():
 
     sent_ids = load_sent_data()
     today_str = datetime.now().strftime("%Y%m%d")
-    
     sent_ids = {x for x in sent_ids if x.startswith(today_str)}
 
     url = "http://openapi.airport.co.kr/service/rest/FlightStatusList/getFlightStatusList"
@@ -51,38 +50,27 @@ def check_jeju():
     try:
         res = requests.get(url, params=params, timeout=10)
         items = []
-        
         try:
             data = res.json()
             items = data['response']['body']['items']['item']
-        except (KeyError, TypeError, json.JSONDecodeError):
-            print("데이터가 없거나 응답 형식 오류")
+        except:
             pass
 
         if isinstance(items, dict):
             items = [items]
         
         new_count = 0
-        
         for flight in items:
-            # [수정] rmkKor 값이 없거나 공백이면 '예정'으로 표시
             raw_status = flight.get('rmkKor')
             status = str(raw_status).strip() if raw_status else "예정"
             
             std = str(flight.get('std', '0000'))
-            etd = flight.get('etd')
-            
-            if etd:
-                etd = str(etd)
-            else: 
-                etd = std
+            etd = str(flight.get('etd')) if flight.get('etd') else std
 
             try:
-                std_int = int(std)
-                etd_int = int(etd)
+                std_int, etd_int = int(std), int(etd)
             except:
-                std_int = 0
-                etd_int = 0
+                std_int, etd_int = 0, 0
 
             is_cancelled = "결항" in status
             is_delayed_status = "지연" in status
@@ -95,30 +83,31 @@ def check_jeju():
                 if unique_id not in sent_ids:
                     airline = flight.get('airlineKorean', '')
                     origin = flight.get('boardingKor', '')
-                    
                     sched_time = f"{std[:2]}:{std[2:]}"
                     etd_time = f"{etd[:2]}:{etd[2:]}"
                     
-                    if is_cancelled:
-                        header = "🚫 *항공편 결항 알림*"
-                    else:
-                        header = "⚠️ *항공편 지연 알림*"
+                    # 제목 설정
+                    title = "항공편 결항 알림" if is_cancelled else "항공편 지연 알림"
+                    emoji = "🚫" if is_cancelled else "⚠️"
 
-                    msg = (f"{header}\n"
-                           f"{airline} {flight_num}\n"
-                           f"{origin} → 제주\n"
-                           f"{sched_time} → {etd_time}\n"
-                           f"상태: {status}")
+                    # [코드 블록 디자인] 상세 내용을 ``` 로 감싸서 박스 형태로 만듦
+                    msg = (
+                        f"{emoji} *{title}*\n"
+                        f"```{airline} {flight_num}\n"
+                        f"{origin} → 제주\n"
+                        f"{sched_time} → {etd_time}\n"
+                        f"상태: {status}```"
+                    )
                     
                     send_slack(msg)
                     sent_ids.add(unique_id)
                     new_count += 1
         
         save_sent_data(sent_ids)
-        print(f"실행 완료: 신규 알림 {new_count}건 전송됨")
+        print(f"전송 완료: {new_count}건")
 
     except Exception as e:
-        print(f"시스템 에러: {e}")
+        print(f"에러: {e}")
 
 if __name__ == "__main__":
     check_jeju()
