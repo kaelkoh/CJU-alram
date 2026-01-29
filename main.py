@@ -65,24 +65,33 @@ def check_jeju():
         new_count = 0
         
         for flight in items:
-            status = flight.get('rmkKor', '')     # 문서 기준: rmkKor (항공편상태 국문)
-            std = flight.get('std', '0000')       # 문서 기준: std (예정시간)
+            status = flight.get('rmkKor', '')     # 상태 (도착, 지연, 결항 등)
+            std = flight.get('std', '0000')       # 예정시간
+            etd = flight.get('etd')               # 변경시간
             
-            # [수정됨] 문서 기준: etd (변경시간)
-            # etd가 없으면(None이면) std(예정시간)를 대신 씀
-            etd = flight.get('etd')
             if not etd: 
                 etd = std
 
-            # 1. 상태에 '지연/결항' 글자가 있거나 
-            # 2. 예정시간(std)과 변경시간(etd)이 다르면 알림 대상
-            is_status_issue = status and ('지연' in status or '결항' in status)
-            is_time_changed = (std != etd)
+            # 시간 비교를 위해 숫자로 변환 (예: "1230" -> 1230)
+            try:
+                std_int = int(std)
+                etd_int = int(etd)
+            except:
+                std_int = 0
+                etd_int = 0
 
-            if is_status_issue or is_time_changed:
+            # [핵심 로직]
+            # 1. "결항"이거나 "지연" 글자가 있는 경우 무조건 포함
+            # 2. 시간이 "뒤로 밀린 경우(지연)" 포함 (etd > std)
+            # 3. 조기 도착(etd < std)은 여기서 자동 제외됨
+            is_cancelled = "결항" in str(status)
+            is_delayed_status = "지연" in str(status)
+            is_time_delayed = etd_int > std_int
+
+            if is_cancelled or is_delayed_status or is_time_delayed:
                 flight_num = flight.get('airFln', 'Unknown')
                 
-                # 고유 ID에 변경시간(etd) 포함
+                # 고유 ID: 날짜_편명_상태_변경시간
                 unique_id = f"{today_str}_{flight_num}_{status}_{etd}"
                 
                 if unique_id not in sent_ids:
@@ -93,23 +102,21 @@ def check_jeju():
                     sched_time = f"{std[:2]}:{std[2:]}"
                     etd_time = f"{etd[:2]}:{etd[2:]}"
                     
-                    if "결항" in str(status):
+                    # 제목 및 이모지 설정
+                    if is_cancelled:
+                        title = "항공편 결항 알림"
                         emoji = "🚫"
-                        title = "결항"
-                    elif "지연" in str(status):
-                        emoji = "⚠️"
-                        title = "지연"
                     else:
-                        emoji = "🕒"
-                        title = "시간변경"
+                        title = "항공편 지연 알림"
+                        emoji = "⚠️"
 
-                    msg = (f"{emoji} *제주공항 {title} 알림*\n"
-                           f"✈️ {airline} {flight_num}\n"
-                           f"🛫 {origin} → ⏰ {sched_time} (변경: {etd_time})")
+                    # 메시지 포맷 작성 (요청하신 형태)
+                    msg = (f"{emoji} *{title}*\n"
+                           f"{airline} {flight_num}\n"
+                           f"{origin} → 제주\n"
+                           f"{sched_time} → {etd_time}\n"
+                           f"상태: {status}")
                     
-                    if status:
-                         msg += f"\n📢 상태: {status}"
-
                     send_slack(msg)
                     sent_ids.add(unique_id)
                     new_count += 1
