@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 SERVICE_KEY = os.environ.get('AIRPORT_KEY')
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_URL')
-DATA_FILE = 'sent_data_v6.json'
+DATA_FILE = 'sent_data_final.json'
 
 def send_slack(msg):
     try:
@@ -33,23 +33,16 @@ def get_flight_data(io_type):
         return []
 
 def check_jeju():
-    # [시간 제한 로직] 한국 시간 기준 06:00~22:15 사이가 아니면 종료
-    # GitHub 서버 시간은 UTC이므로 9시간을 더해 한국 시간을 계산합니다.
-    now_kst = datetime.utcnow() + timedelta(hours=9)
-    current_hour = now_kst.hour
-    
-    if not (6 <= current_hour <= 22):
-        print(f"현재 시간 {current_hour}시: 작동 시간이 아니므로 종료합니다.")
-        return
-
     if not SERVICE_KEY or not SLACK_WEBHOOK_URL: return
 
+    # 장부 로드
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             sent_ids = set(json.load(f))
     else:
         sent_ids = set()
 
+    now_kst = datetime.utcnow() + timedelta(hours=9)
     today_str = now_kst.strftime("%Y%m%d")
     sent_ids = {x for x in sent_ids if x.startswith(today_str)}
 
@@ -62,13 +55,11 @@ def check_jeju():
         std = str(f.get('std', '0000'))
         etd = str(f.get('etd')) if f.get('etd') else std
 
-        try:
-            std_int, etd_int = int(std), int(etd)
-        except:
-            std_int, etd_int = 0, 0
-
         is_cancelled = "결항" in status
-        is_delayed = etd_int > std_int or "지연" in status
+        try:
+            is_delayed = int(etd) > int(std) or "지연" in status
+        except:
+            is_delayed = "지연" in status
 
         if is_cancelled or is_delayed:
             flight_num = f.get('airFln', 'Unknown')
@@ -79,22 +70,20 @@ def check_jeju():
                 city = f.get('boardingKor', '') if type_name == '도착' else f.get('arrivedKor', '')
                 route = f"{city} → 제주" if type_name == '도착' else f"제주 → {city}"
                 
-                sched_time = f"{std[:2]}:{std[2:]}"
-                etd_time = f"{etd[:2]}:{etd[2:]}"
-                
-                emoji = "🚫" if is_cancelled else "⚠️"
-                title = f"국내선 {type_name} {'결항' if is_cancelled else '지연'} 알림"
-
-                msg = (f"{emoji} *{title}*\n"
+                msg = (f"{'🚫' if is_cancelled else '⚠️'} *국내선 {type_name} {'결항' if is_cancelled else '지연'}*\n"
                        f"```{airline} {flight_num}\n"
                        f"{route}\n"
-                       f"{sched_time} → {etd_time}\n"
+                       f"{std[:2]}:{std[2:]} → {etd[:2]}:{etd[2:]}\n"
                        f"상태: {status}```")
                 
                 send_slack(msg)
                 sent_ids.add(unique_id)
                 new_count += 1
     
+    # [추가됨] 새로운 변동 사항이 없을 때만 알림 전송
+    if new_count == 0:
+        send_slack(f"✅ {now_kst.strftime('%H:%M')} 현재 지연/결항 변동사항이 없습니다.")
+
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(list(sent_ids), f, ensure_ascii=False)
     print(f"완료: {new_count}건 전송")
