@@ -1,39 +1,6 @@
-name: Jeju Airport Watcher
-
 on:
   schedule:
-    # 정각, 10분, 20분... 단위로 실행 (UTC 기준이므로 한국 시간과는 차이가 있지만 주기는 동일합니다)
-    - cron: '*/10 * * * *'
-  workflow_dispatch: # 수동 실행 버튼 허용
-
-permissions:
-  contents: write
-
-jobs:
-  run-bot:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 체크아웃
-        uses: actions/checkout@v3
-
-      - name: 파이썬 세팅
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: 라이브러리 설치
-        run: pip install -r requirements.txt
-
-      - name: 봇 실행
-        env:
-          AIRPORT_KEY: ${{ secrets.AIRPORT_KEY }}
-          SLACK_URL: ${{ secrets.SLACK_URL }}
-        run: python main.py
-
-      - name: 데이터 저장
-        run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          git add sent_data.json || echo "No changes"
-          git commit -m "Update sent list" || echo "No changes"
-          git push
+    # 한국 시간(KST) 기준 매일 06:00 ~ 22:00까지 15분 단위 실행
+    # UTC 기준: 매일 21:00 (전날) ~ 13:00 (당일)
+    - cron: '0,15,30,45 21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12 * * *'
+  workflow_dispatch: # 수동 실행 버튼 유지
