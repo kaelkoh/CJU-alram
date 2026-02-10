@@ -12,7 +12,7 @@ on:
 
   workflow_dispatch: # 수동 실행 버튼
 
-# [중요] GitHub 권한 설정 (자동 저장 기능 활성화)
+# [중요] GitHub 권한 설정
 permissions:
   contents: write
 
@@ -38,10 +38,15 @@ jobs:
     - name: 봇 실행
       run: python main.py
 
-    - name: 데이터 저장
+    - name: 데이터 저장 (파일이 있을 때만 실행)
       run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add sent_data_final.json
-        git commit -m "Update sent data" || exit 0
-        git push
+        # 장부 파일이 존재하는지 확인 후 저장
+        if [ -f sent_data_final.json ]; then
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add sent_data_final.json
+          git commit -m "Update sent data" || exit 0
+          git push
+        else
+          echo "저장할 데이터 파일이 없습니다. (요약 모드 실행 중)"
+        fi
