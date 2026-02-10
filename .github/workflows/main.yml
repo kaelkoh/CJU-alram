@@ -10,9 +10,9 @@ on:
     # UTC 기준: 당일 13시 15분 (22:45는 실행 안 함)
     - cron: '15 13 * * *'
 
-  workflow_dispatch: # 수동 실행 버튼 (비상용)
+  workflow_dispatch: # 수동 실행 버튼
 
-# [중요] GitHub 권한 설정 (이 코드가 있으면 Settings에서 권한 안 바꿔도 됨)
+# [중요] GitHub 권한 설정 (자동 저장 기능 활성화)
 permissions:
   contents: write
 
@@ -20,15 +20,14 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     env:
-      # Secrets에 등록한 변수들을 불러옵니다
       SLACK_URL: ${{ secrets.SLACK_URL }}
       AIRPORT_KEY: ${{ secrets.AIRPORT_KEY }}
 
     steps:
-    - name: 체크아웃 (코드 가져오기)
+    - name: 체크아웃
       uses: actions/checkout@v3
 
-    - name: 파이썬 세팅 (3.9 버전)
+    - name: 파이썬 세팅
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
@@ -39,12 +38,10 @@ jobs:
     - name: 봇 실행
       run: python main.py
 
-    - name: 데이터 저장 (자동 커밋 & 푸시)
+    - name: 데이터 저장
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        # 변경된 장부 파일만 추가
         git add sent_data_final.json
-        # 변경사항이 있을 때만 커밋 (에러 방지)
         git commit -m "Update sent data" || exit 0
         git push
