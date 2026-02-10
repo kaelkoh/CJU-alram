@@ -2,22 +2,33 @@ name: Jeju Airport Watcher
 
 on:
   schedule:
-    # 한국 시간(KST) 기준 매일 06:00 ~ 22:00 (UTC 21:00 ~ 13:00) 15분 단위
-    - cron: '0,15,30,45 21,22,23,0,1,2,3,4,5,6,7,8,9,10,11,12 * * *'
-  workflow_dispatch: # 수동 실행 버튼
+    # 1. 밤~오전/오후 구간 (한국 시간 06:15 ~ 21:45)
+    # UTC 기준: 전날 21시 ~ 당일 12시까지 매시 15분, 45분 실행
+    - cron: '15,45 21-23,0-12 * * *'
+
+    # 2. 마지막 실행 (한국 시간 22:15)
+    # UTC 기준: 당일 13시 15분 (22:45는 실행 안 함)
+    - cron: '15 13 * * *'
+
+  workflow_dispatch: # 수동 실행 버튼 (비상용)
+
+# [중요] GitHub 권한 설정 (이 코드가 있으면 Settings에서 권한 안 바꿔도 됨)
+permissions:
+  contents: write
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     env:
+      # Secrets에 등록한 변수들을 불러옵니다
       SLACK_URL: ${{ secrets.SLACK_URL }}
       AIRPORT_KEY: ${{ secrets.AIRPORT_KEY }}
 
     steps:
-    - name: 체크아웃
+    - name: 체크아웃 (코드 가져오기)
       uses: actions/checkout@v3
 
-    - name: 파이썬 세팅
+    - name: 파이썬 세팅 (3.9 버전)
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
@@ -28,10 +39,12 @@ jobs:
     - name: 봇 실행
       run: python main.py
 
-    - name: 데이터 저장
+    - name: 데이터 저장 (자동 커밋 & 푸시)
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        # 변경된 장부 파일만 추가
         git add sent_data_final.json
+        # 변경사항이 있을 때만 커밋 (에러 방지)
         git commit -m "Update sent data" || exit 0
         git push
